@@ -1,0 +1,96 @@
+name: Build and release TVM-Linker
+
+on: 
+  push:
+  workflow_dispatch:
+  schedule:    
+    - cron:  '0 0 * * *'
+
+env:
+  REPO_OWNER: tonlabs
+  REPO_NAME: TVM-linker
+  REPO_BRANCH: master
+
+jobs:
+  build-n-release:
+    runs-on: ubuntu-latest
+    steps:          
+      - name: Check for new commits
+        uses: actions/github-script@v2
+        id: detect-latest-commit
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          result-encoding: string
+          script: |
+            const { data: { commit: { sha, html_url } } } = await github.repos.getBranch({
+              owner: process.env.REPO_OWNER,
+              repo: process.env.REPO_NAME,
+              branch: process.env.REPO_BRANCH,
+            })
+              
+            const shaShort = sha.substr(0, 12)  
+            core.exportVariable('SOURCE_REPO_SHA', sha)
+            core.exportVariable('SOURCE_REPO_SHA_SHORT', shaShort)
+            core.exportVariable('SOURCE_REPO_COMMIT_LINK', html_url)
+
+            try {
+              var { data: { tag_name: latestReleaseTag } } = await github.repos.getLatestRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              })
+            } catch (e) {              
+              if (e.name == 'HttpError' && e.status == 404) {
+                latestReleaseTag = null
+              } else { throw e; }              
+            }            
+
+            core.exportVariable('IS_NEW_REVISION', shaShort !== latestReleaseTag)
+            
+      - name: Check out
+        if: ${{ env.IS_NEW_REVISION == 'true' }}
+        uses: actions/checkout@v2
+        with:
+          repository: ${{env.REPO_OWNER}}/${{env.REPO_NAME}}
+          ref: ${{ env.SOURCE_REPO_SHA }}
+          
+      - name: Install dependencies
+        if: ${{ env.IS_NEW_REVISION == 'true' }}
+        run: |
+          sudo apt update -y          
+          sudo apt install -y cargo
+
+      - name: Build
+        if: ${{ env.IS_NEW_REVISION == 'true' }}
+        run: |
+          cd tvm_linker
+          cargo build --release
+      
+      - name: Prepare release assets
+        if: ${{ env.IS_NEW_REVISION == 'true' }}
+        run: |          
+          cd $GITHUB_WORKSPACE/tvm_linker/target/release
+          tar -czvf $GITHUB_WORKSPACE/tvm_linker.tar.gz tvm_linker
+          
+      - name: Create Release
+        if: ${{ env.IS_NEW_REVISION == 'true' }}
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.SOURCE_REPO_SHA_SHORT }}
+          release_name: TVM Linker ${{ env.SOURCE_REPO_SHA_SHORT }}
+          body: "Source commit: ${{ env.SOURCE_REPO_COMMIT_LINK }}"
+          draft: false
+          prerelease: false
+          
+      - name: Upload Release Asset [tvm_linker]
+        if: ${{ env.IS_NEW_REVISION == 'true' }}        
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }} 
+          asset_path: tvm_linker.tar.gz
+          asset_name: tvm_linker.tar.gz
+          asset_content_type: application/tar+gzip
