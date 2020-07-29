@@ -69,6 +69,7 @@ jobs:
         if: ${{ env.IS_NEW_REVISION == 'true' }}
         run: |          
           cd $GITHUB_WORKSPACE/tvm_linker/target/release
+          ./tvm_linker --version
           tar -czvf $GITHUB_WORKSPACE/tvm_linker.tar.gz tvm_linker
           
       - name: Create Release
