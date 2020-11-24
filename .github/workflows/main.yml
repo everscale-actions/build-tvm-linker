@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:          
       - name: Check for new commits
-        uses: actions/github-script@v2
+        uses: actions/github-script@v3.1.0
         id: detect-latest-commit
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
